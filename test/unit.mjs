@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   buildAuthHeaders,
+  langfuseVerdict,
   isLangfuseKeyPair,
   collectorConfigFrom,
   describeTestFailure,
@@ -115,8 +116,32 @@ assert.equal(genericCfg.exportMetrics, true);
 assert.deepEqual(genericCfg.headers, {});
 assert.equal(genericCfg.captureContent, false);
 
+// langfuseVerdict
+{
+  const ids = { control: "aaa", genai: "bbb", real: "ccc" };
+  const all = langfuseVerdict({ control: "found", genai: "found", real: "found" }, ids);
+  assert.equal(all.ok, true);
+  assert.match(all.message, /全部测试 trace 入库/);
+  assert.match(all.message, /累计导出/);
+  const dropped = langfuseVerdict({ control: "found", genai: "found", real: "not-found" }, ids);
+  assert.equal(dropped.ok, false);
+  assert.match(dropped.message, /真实管线复刻.*丢弃/s);
+  assert.match(dropped.message, /ccc/);
+  const droppedBoth = langfuseVerdict({ control: "found", genai: "not-found", real: "not-found" }, ids);
+  assert.equal(droppedBoth.ok, false);
+  assert.match(droppedBoth.message, /GenAI 形态、真实管线复刻/);
+  const unreachable = langfuseVerdict({ control: "unreachable:HTTP 404", genai: "not-found", real: "not-found" }, ids);
+  assert.equal(unreachable.ok, true);
+  assert.match(unreachable.message, /无法通过 Langfuse API 回查/);
+  const none = langfuseVerdict({ control: "not-found", genai: "not-found", real: "not-found" }, ids);
+  assert.equal(none.ok, true);
+  assert.match(none.message, /worker/);
+}
+
 // describeTestFailure
 assert.match(describeTestFailure("Export failed with status code 401"), /认证失败/);
+assert.match(describeTestFailure("Export failed with status code 413"), /请求体过大/);
+assert.match(describeTestFailure("Request Entity Too Large"), /请求体过大/);
 assert.match(describeTestFailure("Export failed with status code 404"), /接口不存在/);
 assert.match(describeTestFailure("getaddrinfo ENOTFOUND nope.example"), /无法连接/);
 assert.equal(describeTestFailure("weird"), "weird");

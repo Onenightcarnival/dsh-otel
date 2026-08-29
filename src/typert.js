@@ -27,9 +27,12 @@ export const TYPERT = {
         members: [
           { kind: "method", name: "status", signature: "async status(request: OtelStatusRequest): Promise<OtelStatusResult>" },
           { kind: "method", name: "save", signature: "async save(request: OtelSaveRequest): Promise<OtelSaveResult>" },
-          { kind: "method", name: "test", signature: "async test(request: OtelTestRequest): Promise<OtelTestResult>" }
+          { kind: "method", name: "test", signature: "async test(request: OtelTestRequest): Promise<OtelTestResult>" },
+          { kind: "method", name: "verifyRecent", signature: "async verifyRecent(request: OtelVerifyRecentRequest): Promise<OtelVerifyRecentResult>" }
         ],
         types: [
+          { name: "OtelVerifyRecentRequest", declaration: "export interface OtelVerifyRecentRequest {}" },
+          { name: "OtelVerifyRecentResult", declaration: "export type OtelVerifyRecentResult = OtelResult<{ message: string; allFound: boolean }>;" },
           { name: "OtelStatusRequest", declaration: "export interface OtelStatusRequest {}" },
           { name: "OtelStatusResult", declaration: "export type OtelStatusResult = OtelResult<OtelStatus>;" },
           { name: "OtelSaveRequest", declaration: "export interface OtelSaveRequest { readonly endpoint: string; readonly publicKey: string; readonly secretKey?: string; readonly enabled: boolean; readonly captureContent: boolean; }" },

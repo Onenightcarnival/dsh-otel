@@ -92,6 +92,39 @@ assert.equal(saved.value.traceEndpoint, `${endpoint}/v1/traces`);
 await new Promise((resolve) => setTimeout(resolve, 200));
 assert.ok(sessionsListCalls >= 1, "embedded collector should have enumerated sessions on apply");
 
+// Drive one real conversation turn through the embedded collector: emit the
+// native DSH session events the coordinator subscribes to, then wait past
+// the 5s batch interval and assert the session trace reached the stub at the
+// SAME /v1/traces URL the panel test uses — the real-reporting URL and the
+// test URL are one code path.
+{
+  const before = posts.length;
+  const sess = {
+    id: "session-int",
+    header: { id: "session-int", createdAt: Date.now() - 1000, cwd: "/tmp/p", agentPreset: "default" },
+    firstLiveSeq: 0,
+    events: []
+  };
+  const started = Date.now() - 500;
+  const evt = (type, data, seq, time) => ({ type, data, seq, time });
+  ctx.emit("session/created", sess);
+  ctx.emit("session/event", sess, evt("turn/start", { turn: 1 }, 0, started));
+  ctx.emit("session/event", sess, evt(
+    "user/message",
+    { id: "u1", role: "user", content: [{ type: "text", text: "你好" }], source: { kind: "user" } },
+    1, started + 10
+  ));
+  ctx.emit("session/event", sess, evt("step/start", { turn: 1, step: 1 }, 2, started + 20));
+  ctx.emit("session/event", sess, evt("step/end", { turn: 1, step: 1 }, 3, started + 30));
+  ctx.emit("session/event", sess, evt("turn/end", { turn: 1, reason: { kind: "completed" } }, 4, started + 40));
+  await new Promise((resolve) => setTimeout(resolve, 6500));
+  assert.ok(posts.length > before, "embedded collector should have exported the session trace");
+  const sessionPost = posts.at(-1);
+  assert.equal(sessionPost.url, "/v1/traces", "real reporting must hit the same signal URL as the test");
+  assert.equal(sessionPost.auth, `Basic ${Buffer.from("pk-test:sk-test").toString("base64")}`);
+  assert.ok(sessionPost.bytes > 100, `session trace should carry spans: ${sessionPost.bytes}`);
+}
+
 // Second save with sk omitted keeps the stored secret.
 const resaved = await service.save({
   endpoint,

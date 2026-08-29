@@ -10,6 +10,9 @@ const { useCallback, useEffect, useState } = React;
 
 const LANGFUSE_CLOUD_PLACEHOLDER = "https://cloud.langfuse.com/api/public/otel";
 
+const DEFAULT_CONTENT_MAX_CHARS = 128000;
+const DEFAULT_MAX_EXPORT_BATCH_SIZE = 512;
+
 function emptyForm() {
   return {
     endpoint: "",
@@ -19,7 +22,10 @@ function emptyForm() {
     // already-saved secret is kept server-side and never echoed back.
     secretDirty: false,
     enabled: true,
-    captureContent: true
+    captureContent: true,
+    gzip: false,
+    contentMaxChars: String(DEFAULT_CONTENT_MAX_CHARS),
+    maxExportBatchSize: String(DEFAULT_MAX_EXPORT_BATCH_SIZE)
   };
 }
 
@@ -29,8 +35,28 @@ function statusToForm(status) {
     endpoint: status.endpoint,
     publicKey: status.publicKey,
     enabled: status.configured ? status.enabled : true,
-    captureContent: status.captureContent
+    captureContent: status.captureContent,
+    gzip: status.gzip ?? false,
+    contentMaxChars: String(status.contentMaxChars ?? DEFAULT_CONTENT_MAX_CHARS),
+    maxExportBatchSize: String(status.maxExportBatchSize ?? DEFAULT_MAX_EXPORT_BATCH_SIZE)
   };
+}
+
+/** Parse an advanced numeric field: blank or default value → omit (use default). */
+function numberOverride(text, defaultValue) {
+  const value = Number.parseInt(String(text).trim(), 10);
+  if (!Number.isFinite(value) || value <= 0 || value === defaultValue) return {};
+  return value;
+}
+
+function advancedPayload(form) {
+  const payload = {};
+  if (form.gzip) payload.gzip = true;
+  const content = numberOverride(form.contentMaxChars, DEFAULT_CONTENT_MAX_CHARS);
+  if (typeof content === "number") payload.contentMaxChars = content;
+  const batch = numberOverride(form.maxExportBatchSize, DEFAULT_MAX_EXPORT_BATCH_SIZE);
+  if (typeof batch === "number") payload.maxExportBatchSize = batch;
+  return payload;
 }
 
 export function OtelSettings({ api }) {
@@ -39,6 +65,8 @@ export function OtelSettings({ api }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [notice, setNotice] = useState(null); // { kind: "ok" | "error", text }
 
   const refresh = useCallback(async () => {
@@ -72,6 +100,7 @@ export function OtelSettings({ api }) {
         publicKey: form.publicKey,
         enabled: form.enabled,
         captureContent: form.captureContent,
+        ...advancedPayload(form),
         ...secretPayload()
       });
       setStatus(value);
@@ -98,6 +127,7 @@ export function OtelSettings({ api }) {
       const value = await api.test({
         endpoint: form.endpoint,
         publicKey: form.publicKey,
+        gzip: form.gzip,
         ...secretPayload()
       });
       setNotice({ kind: "ok", text: value.message });
@@ -105,6 +135,19 @@ export function OtelSettings({ api }) {
       setNotice({ kind: "error", text: String(error?.message ?? error) });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleVerifyRecent = async () => {
+    setVerifying(true);
+    setNotice(null);
+    try {
+      const value = await api.verifyRecent();
+      setNotice({ kind: value.allFound ? "ok" : "error", text: value.message });
+    } catch (error) {
+      setNotice({ kind: "error", text: String(error?.message ?? error) });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -128,13 +171,30 @@ export function OtelSettings({ api }) {
             与 Endpoint，保存后立即生效，无需重启。
           </p>
         </div>
-        <span style={running ? styles.badgeOn : styles.badgeOff}>
-          {running ? "上报中" : "未上报"}
-        </span>
+        <div style={styles.badgeCol}>
+          <span style={running ? styles.badgeOn : styles.badgeOff}>
+            {running ? "上报中" : "未上报"}
+          </span>
+          <button type="button" style={styles.linkButton} onClick={refresh}>刷新状态</button>
+        </div>
       </div>
 
       {status?.lastError ? (
         <div style={styles.error}>采集器启动失败：{status.lastError}</div>
+      ) : null}
+
+      {status?.lastExportError ? (
+        <div style={styles.error}>
+          最近一次上报失败：{status.lastExportError}
+          <div style={styles.errorHint}>
+            对话结束后点「回查最近导出」可逐条确认哪些 trace 真正入了库；网络类错误可尝试
+            高级设置里的 gzip 压缩或调低正文截断上限，再点「发送测试 Trace」验证。
+          </div>
+        </div>
+      ) : null}
+
+      {status?.lastExportNote ? (
+        <p style={styles.meta}>提示：{status.lastExportNote}</p>
       ) : null}
 
       <div style={styles.formCard}>
@@ -201,11 +261,69 @@ export function OtelSettings({ api }) {
           </label>
         </div>
 
+        <div>
+          <button
+            type="button"
+            style={styles.linkButton}
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            {showAdvanced ? "收起高级设置 ▴" : "高级设置 ▾"}
+          </button>
+          {showAdvanced ? (
+            <div style={styles.advanced}>
+              <label style={styles.switch}>
+                <input
+                  type="checkbox"
+                  checked={form.gzip}
+                  onChange={(event) => patch({ gzip: event.target.checked })}
+                />
+                <span>
+                  gzip 压缩
+                  <span style={styles.hint}>（压缩 OTLP 请求体；网关限制 body 大小时建议开启，需服务端支持）</span>
+                </span>
+              </label>
+              <label style={styles.field}>
+                <span>
+                  正文截断上限（字符）
+                  <span style={styles.hint}>默认 {DEFAULT_CONTENT_MAX_CHARS}；网关限制严格时可调低（如 16000），直接影响单批请求体大小</span>
+                </span>
+                <input
+                  style={styles.inputNarrow}
+                  value={form.contentMaxChars}
+                  onChange={(event) => patch({ contentMaxChars: event.target.value })}
+                  inputMode="numeric"
+                />
+              </label>
+              <label style={styles.field}>
+                <span>
+                  单批最大 span 数
+                  <span style={styles.hint}>默认 {DEFAULT_MAX_EXPORT_BATCH_SIZE}；调低可进一步压小单次请求</span>
+                </span>
+                <input
+                  style={styles.inputNarrow}
+                  value={form.maxExportBatchSize}
+                  onChange={(event) => patch({ maxExportBatchSize: event.target.value })}
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+
         <div style={styles.actions}>
           <button
             type="button"
             style={styles.secondary}
-            disabled={testing || saving}
+            disabled={testing || saving || verifying}
+            onClick={handleVerifyRecent}
+            title="用 Langfuse API 逐条回查最近导出的 trace（含真实对话）是否真正入库"
+          >
+            {verifying ? "回查中…" : "回查最近导出"}
+          </button>
+          <button
+            type="button"
+            style={styles.secondary}
+            disabled={testing || saving || verifying}
             onClick={handleTest}
           >
             {testing ? "测试中…" : "发送测试 Trace"}
@@ -231,6 +349,16 @@ export function OtelSettings({ api }) {
           {status.traceEndpoint.includes("/api/public/otel") ? "（Langfuse 平台不接收 OTLP 指标，已自动只上报 Trace）" : ""}
         </p>
       ) : null}
+
+      {status ? (
+        <p style={styles.meta}>
+          累计导出（本次运行，含测试）：{status.exportedBatches ?? 0} 批 / {status.exportedSpans ?? 0} 个 span
+          {status.lastExportAt
+            ? `；最近一次 ${status.lastExportAt.replace("T", " ").slice(0, 19)}（${status.lastExportOk ? "成功" : "失败"}）`
+            : ""}
+          。对话结束约 10 秒后点「刷新状态」：计数不增长说明该对话没有经过本插件导出。
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -244,6 +372,11 @@ const styles = {
   description: { margin: "6px 0 0", fontSize: 13, color: "inherit", opacity: 0.76, lineHeight: 1.5 },
   badgeOn: { flex: "none", fontSize: 11, color: "#32c56c", background: "rgba(50,197,108,.16)", padding: "3px 8px", borderRadius: 99 },
   badgeOff: { flex: "none", fontSize: 11, color: "inherit", opacity: 0.7, background: "rgba(127,127,127,.16)", padding: "3px 8px", borderRadius: 99 },
+  badgeCol: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flex: "none" },
+  linkButton: { border: 0, background: "transparent", color: "inherit", opacity: 0.72, cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline", textUnderlineOffset: 3 },
+  advanced: { display: "flex", flexDirection: "column", gap: 10, marginTop: 10, padding: 12, border: "1px dashed rgba(127,127,127,.4)", borderRadius: 8 },
+  inputNarrow: { width: 180, boxSizing: "border-box", border: "1px solid rgba(127,127,127,.55)", borderRadius: 7, padding: "6px 9px", background: "transparent", color: "inherit", fontSize: 13, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+  errorHint: { marginTop: 6, fontSize: 12, opacity: 0.85 },
   formCard: { display: "flex", flexDirection: "column", gap: 12, padding: 16, border: "1px solid rgba(127,127,127,.4)", borderRadius: 10 },
   field: { display: "flex", flexDirection: "column", gap: 5, fontSize: 13 },
   hint: { color: "inherit", opacity: 0.7, fontWeight: 400, fontSize: 12 },
@@ -253,8 +386,8 @@ const styles = {
   actions: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 },
   primary: { border: 0, borderRadius: 7, padding: "7px 14px", background: "var(--dsw-alias-button-primary-fill, #2d6cdf)", color: "var(--dsw-alias-label-primary-foreground, #fff)", cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" },
   secondary: { border: "1px solid rgba(127,127,127,.55)", borderRadius: 7, padding: "6px 12px", background: "transparent", color: "inherit", cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" },
-  error: { marginTop: 12, padding: "8px 10px", borderRadius: 7, background: "rgba(240,113,113,.15)", color: "#ff8a8a", fontSize: 13, lineHeight: 1.5, overflowWrap: "anywhere" },
-  noticeOk: { marginTop: 12, padding: "8px 10px", borderRadius: 7, background: "rgba(50,197,108,.14)", color: "#32c56c", fontSize: 13, lineHeight: 1.5 },
+  error: { marginTop: 12, padding: "8px 10px", borderRadius: 7, background: "rgba(240,113,113,.15)", color: "#ff8a8a", fontSize: 13, lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
+  noticeOk: { marginTop: 12, padding: "8px 10px", borderRadius: 7, background: "rgba(50,197,108,.14)", color: "#32c56c", fontSize: 13, lineHeight: 1.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
   meta: { marginTop: 12, fontSize: 12, color: "inherit", opacity: 0.76, lineHeight: 1.5 },
   code: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }
 };

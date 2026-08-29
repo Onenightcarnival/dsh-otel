@@ -5,6 +5,28 @@
  */
 import { build } from "esbuild";
 import { mkdir, rm } from "node:fs/promises";
+import { resolve } from "node:path";
+
+/**
+ * Substitute the OTLP proto exporters with the keep-alive-off shims in
+ * src/otlp-shims/ for every importer except the shims themselves (which need
+ * the real modules). Applies to the embedded collector and our own test
+ * exporter alike, so the panel test and real reporting share one transport
+ * behaviour.
+ */
+const keepAliveShimPlugin = {
+  name: "otlp-keepalive-shim",
+  setup(pluginBuild) {
+    pluginBuild.onResolve(
+      { filter: /^@opentelemetry\/exporter-(?:trace|metrics)-otlp-proto$/ },
+      (args) => {
+        if (args.importer.includes("otlp-shims")) return undefined;
+        const shim = args.path.includes("trace") ? "trace.js" : "metrics.js";
+        return { path: resolve("src/otlp-shims", shim) };
+      }
+    );
+  }
+};
 
 const PKG = "dsh-otel";
 
@@ -37,6 +59,7 @@ await build({
   outfile: "lib/index.js",
   external: HOST_EXTERNALS,
   banner: { js: hostBanner },
+  plugins: [keepAliveShimPlugin],
   logLevel: "info"
 });
 

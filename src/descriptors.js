@@ -36,5 +36,6 @@ function def(method, requestSchema, requestType, resultSchema, resultType) {
 export const DESCRIPTORS = [
   def("status", S.statusRequestSchema, "OtelStatusRequest", S.statusResultSchema, "OtelStatusResult"),
   def("save", S.saveRequestSchema, "OtelSaveRequest", S.saveResultSchema, "OtelSaveResult"),
-  def("test", S.testRequestSchema, "OtelTestRequest", S.testResultSchema, "OtelTestResult")
+  def("test", S.testRequestSchema, "OtelTestRequest", S.testResultSchema, "OtelTestResult"),
+  def("verifyRecent", S.verifyRecentRequestSchema, "OtelVerifyRecentRequest", S.verifyRecentResultSchema, "OtelVerifyRecentResult")
 ];

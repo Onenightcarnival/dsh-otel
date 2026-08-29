@@ -44,6 +44,10 @@ export class OtelApi {
   test(input) {
     return this.call("test", input);
   }
+
+  verifyRecent() {
+    return this.call("verifyRecent", {});
+  }
 }
 
 export function createOtelApi(ctx) {
