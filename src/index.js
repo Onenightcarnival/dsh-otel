@@ -17,7 +17,7 @@ import { BasicTracerProvider, SimpleSpanProcessor } from "@opentelemetry/sdk-tra
 import { z } from "zod";
 import * as collectorPlugin from "@loongsuite/dsh-plugin";
 
-export const PLUGIN_VERSION = "0.1.2";
+export const PLUGIN_VERSION = "0.1.3";
 
 const CONFIG_KEY = "default";
 const TEST_TIMEOUT_MS = 15000;
@@ -60,7 +60,12 @@ export function isLangfuseKeyPair(publicKey, secretKey) {
  * Normalize a user-pasted endpoint. Adds https:// when the scheme is missing,
  * strips trailing slashes, and — when the host looks like Langfuse or the
  * caller passes a Langfuse hint (pk-lf-/sk-lf- keys) — appends the
- * `/api/public/otel` OTLP base path when the user pasted only the site URL.
+ * `/api/public/otel` OTLP base path the way the Langfuse SDKs do: onto
+ * whatever base URL was given, gateway path prefixes included
+ * (e.g. https://gateway.corp/langfuse → …/langfuse/api/public/otel).
+ * A URL already ending in /api/public/otel, or pinned to an explicit signal
+ * path (/v1/traces, /v1/metrics), is kept as-is — the signal form is also
+ * the escape hatch when the auto-append is not wanted.
  */
 export function normalizeEndpoint(raw, langfuseHint = false) {
   let value = String(raw ?? "").trim().replace(/\/+$/, "");
@@ -70,8 +75,10 @@ export function normalizeEndpoint(raw, langfuseHint = false) {
     const url = new URL(value);
     const path = url.pathname.replace(/\/+$/, "");
     const langfuse = langfuseHint || /langfuse/i.test(url.hostname);
-    if (langfuse && path === "") {
-      url.pathname = "/api/public/otel";
+    const hasOtelBase = /\/api\/public\/otel$/i.test(path);
+    const isSignalUrl = /\/v1\/(?:traces|metrics)$/i.test(path);
+    if (langfuse && !hasOtelBase && !isSignalUrl) {
+      url.pathname = `${path}/api/public/otel`;
       return url.toString().replace(/\/+$/, "");
     }
     return value;
@@ -188,7 +195,8 @@ export function describeTestFailure(message) {
     return `认证失败（${message}）——请检查 Public Key / Secret Key 是否正确、是否属于该项目`;
   }
   if (/status code 404/i.test(message)) {
-    return `接口不存在（${message}）——请检查 Endpoint 路径（Langfuse 应为 …/api/public/otel）`;
+    return `接口不存在（${message}）——请检查 Endpoint 路径（Langfuse 应为 …/api/public/otel；`
+      + `经网关暴露时请确认网关转发了 /api/public/otel/* 路径）`;
   }
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|timed out|socket hang up/i.test(message)) {
     return `无法连接到服务端（${message}）——请检查 Endpoint 地址与网络/代理`;
@@ -354,7 +362,13 @@ export default class DshOtelService extends TypertRemoteService {
           }
         };
       }
-      return { ok: false, error: fail("test-failed", describeTestFailure(result.message)) };
+      return {
+        ok: false,
+        error: fail(
+          "test-failed",
+          `${describeTestFailure(result.message)}（实际请求地址：${result.traceEndpoint}）`
+        )
+      };
     } catch (error) {
       return { ok: false, error: fail("test-failed", describeTestFailure(String(error?.message ?? error))) };
     }

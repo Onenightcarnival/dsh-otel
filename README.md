@@ -27,7 +27,7 @@ OpenTelemetry GenAI 调用链上报到 Langfuse 等 OTLP 兼容平台。
 命令行：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.2.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.3.tgz
 ```
 
 要观测 headless profile 的话再执行一次 `--profile headless`（headless 没有界面，
@@ -39,7 +39,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.2.tgz
 
 | 字段 | 说明 |
 | --- | --- |
-| Endpoint | OTLP/HTTP 基地址。粘贴 Langfuse 站点地址会自动补全 `/api/public/otel`——云端按域名识别，自建实例（任意域名，`http://localhost:3000` 也行）按 `pk-lf-`/`sk-lf-` key 前缀识别；通用 OTLP 后端（Jaeger、SigNoz、Collector 等）填到端口即可，如 `http://localhost:4318`。 |
+| Endpoint | OTLP/HTTP 基地址。粘贴 Langfuse base url 会像官方 SDK 一样自动在其后补全 `/api/public/otel`（云端按域名识别，自建/网关部署按 `pk-lf-`/`sk-lf-` key 前缀识别，网关子路径如 `https://gateway.corp/langfuse` 也支持）；填以 `/v1/traces` 结尾的完整地址则原样使用，不做补全；通用 OTLP 后端（Jaeger、SigNoz、Collector 等）填到端口即可，如 `http://localhost:4318`。 |
 | Public Key (pk) | Langfuse 项目设置 → API Keys 里的 `pk-lf-…`。和 sk 一起编码成 `Authorization: Basic` 请求头；两者都留空则不发认证头。 |
 | Secret Key (sk) | `sk-lf-…`。只保存在本机 DSH 数据目录，不回显、不进入前端状态。 |
 | 启用上报 | 总开关。关闭后采集器卸载，配置保留。 |
