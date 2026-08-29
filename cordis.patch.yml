@@ -1,0 +1,6 @@
+# dsh-otel bundle patch: registers the observability plugin entry.
+# Install with: dsh plugin --profile web add ./dsh-otel-<version>.tgz
+# or via DeepSeek Harness Desktop: 插件 → 配置中心 → 插件 → 从 .tgz 安装
+- insert:
+    - id: dsh-otel
+      name: 'dsh-otel'
