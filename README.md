@@ -29,13 +29,13 @@ OpenTelemetry GenAI 调用链上报到 Langfuse 等 OTLP 兼容平台。
 本地 tgz 的安装行为一致，同样不访问 npm registry）：
 
 ```sh
-dsh plugin --profile web add https://github.com/Onenightcarnival/dsh-otel/releases/download/v0.1.9/dsh-otel-0.1.9.tgz
+dsh plugin --profile web add https://github.com/Onenightcarnival/dsh-otel/releases/download/v0.1.10/dsh-otel-0.1.10.tgz
 ```
 
 离线环境先把 tgz 下载到本机，再用本地路径安装：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.9.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.10.tgz
 ```
 
 桌面版（[DeepSeek Harness Desktop](https://github.com/Onenightcarnival/deepseek-harness-desktop)）：
