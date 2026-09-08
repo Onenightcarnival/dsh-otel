@@ -135,17 +135,15 @@ scripts/build.mjs     四个产物的 esbuild 配置；DSH 运行时自带的包
 
 ### 发布
 
-打 tag 即发布，本地不需要出包：
+推一个 `vX.Y.Z` 标签就是发布，版本号以标签为准，本地不用改 `package.json`，也不用出包。
+GitHub Desktop 里的操作：在 History 里右键要发布的提交 → Create Tag，填 `v0.1.10`
+这样的名字，再 Push 一次把标签推上去；命令行则是 `git tag v0.1.10 && git push --tags`。
 
-```sh
-npm version patch   # 或 minor / major；会同步改 README 里的安装命令并一并提交
-git push --follow-tags
-```
-
-`v*` 标签会触发 [release 工作流](./.github/workflows/release.yml)：校验 tag 与
-`package.json` 版本一致，`npm ci` 后构建、跑测试、`npm pack`，把 tgz、`SHA256SUMS` 和
-构建来源证明挂到 GitHub Release，最后再核对一次默认分支上 README 的安装命令是否
-已指向该版本（`npm version` 已经改过就不会产生额外提交）。
+标签会触发 [release 工作流](./.github/workflows/release.yml)：先把标签的版本号写进
+`package.json`（`scripts/set-version.mjs`），`npm ci` 后构建、跑测试、`npm pack`，把 tgz、
+`SHA256SUMS` 和构建来源证明挂到 GitHub Release；随后第二个 job 在默认分支上把
+`package.json`、`package-lock.json` 和 README 里的安装命令同步到该版本并自动提交
+（已经一致就不会产生提交）。`package.json` 里的版本号比标签新时不会被回退。
 
 ## 许可证
 

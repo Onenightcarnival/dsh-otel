@@ -1,7 +1,9 @@
-# Tag-triggered release: build the offline .tgz from the tagged source, run the
-# test suite, attach the package (plus checksums and a build-provenance
-# attestation) to a GitHub Release, then keep the README's install command
-# pointing at the version just released.
+# Tag-triggered release. The tag is the single source of truth for the
+# version: the build stamps package.json with the tag's version before packing,
+# and a follow-up job writes that version back to package.json, package-lock.json
+# and the README's install command on the default branch. Push a `vX.Y.Z` tag
+# (GitHub Desktop: right-click a commit, Create Tag, then Push) and nothing else
+# needs editing by hand.
 name: Release
 
 on:
@@ -25,14 +27,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Verify tag matches package.json version
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::tag v$TAG_VERSION does not match package.json version $PKG_VERSION"
-            exit 1
-          fi
+      - name: Stamp package.json with the tag version
+        run: node scripts/set-version.mjs "${GITHUB_REF_NAME#v}"
 
       - name: Install locked dependencies
         run: npm ci
@@ -61,7 +57,7 @@ jobs:
             SHA256SUMS
           generate_release_notes: true
 
-  sync-readme:
+  sync-version:
     needs: release
     runs-on: ubuntu-latest
     steps:
@@ -73,17 +69,19 @@ jobs:
         with:
           node-version: 22
 
-      - name: Point README install command at the released version
-        run: node scripts/sync-readme.mjs "${GITHUB_REF_NAME#v}"
-
-      - name: Commit README if it changed
+      - name: Write the released version to package.json and README
         run: |
-          if git diff --quiet -- README.md; then
-            echo "README already references $GITHUB_REF_NAME"
+          node scripts/set-version.mjs "${GITHUB_REF_NAME#v}"
+          node scripts/sync-readme.mjs "${GITHUB_REF_NAME#v}"
+
+      - name: Commit if anything changed
+        run: |
+          if git diff --quiet -- package.json package-lock.json README.md; then
+            echo "default branch already at $GITHUB_REF_NAME"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git commit -m "docs: point install command at $GITHUB_REF_NAME [skip ci]"
+          git add package.json package-lock.json README.md
+          git commit -m "chore: sync version to $GITHUB_REF_NAME [skip ci]"
           git push origin HEAD:${{ github.event.repository.default_branch }}
