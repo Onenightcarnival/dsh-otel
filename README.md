@@ -21,14 +21,25 @@ OpenTelemetry GenAI 调用链上报到 Langfuse 等 OTLP 兼容平台。
 
 ## 安装
 
-桌面版（[DeepSeek Harness Desktop](https://github.com/Onenightcarnival/deepseek-harness-desktop)）：
-菜单「插件 → 配置中心 → 插件 → 从 .tgz 安装」，选中 `dsh-otel-<版本>.tgz`。
+每个版本的离线包都由 GitHub Actions 从打了 tag 的源码构建，挂在
+[Releases](https://github.com/Onenightcarnival/dsh-otel/releases) 页面，附带 `SHA256SUMS`
+校验文件和构建来源证明（可用 `gh attestation verify` 核对）。
 
-命令行：
+命令行直接填 Release 的下载地址即可（`dsh plugin add` 把参数原样交给 pnpm，远程 tgz 与
+本地 tgz 的安装行为一致，同样不访问 npm registry）：
+
+```sh
+dsh plugin --profile web add https://github.com/Onenightcarnival/dsh-otel/releases/download/v0.1.9/dsh-otel-0.1.9.tgz
+```
+
+离线环境先把 tgz 下载到本机，再用本地路径安装：
 
 ```sh
 dsh plugin --profile web add /absolute/path/to/dsh-otel-0.1.9.tgz
 ```
+
+桌面版（[DeepSeek Harness Desktop](https://github.com/Onenightcarnival/deepseek-harness-desktop)）：
+菜单「插件 → 配置中心 → 插件 → 从 .tgz 安装」，选中下载好的 `dsh-otel-<版本>.tgz`。
 
 要观测 headless profile 的话再执行一次 `--profile headless`（headless 没有界面，
 配置沿用同一存储）。
@@ -121,6 +132,20 @@ scripts/build.mjs     四个产物的 esbuild 配置；DSH 运行时自带的包
 
 兼容范围沿用内嵌采集器：DSH `>=0.1.0-rc.6 <0.2.0`（在 `0.1.1-rc.2` 的 web profile
 实测通过）。
+
+### 发布
+
+打 tag 即发布，本地不需要出包：
+
+```sh
+npm version patch   # 或 minor / major；会同步改 README 里的安装命令并一并提交
+git push --follow-tags
+```
+
+`v*` 标签会触发 [release 工作流](./.github/workflows/release.yml)：校验 tag 与
+`package.json` 版本一致，`npm ci` 后构建、跑测试、`npm pack`，把 tgz、`SHA256SUMS` 和
+构建来源证明挂到 GitHub Release，最后再核对一次默认分支上 README 的安装命令是否
+已指向该版本（`npm version` 已经改过就不会产生额外提交）。
 
 ## 许可证
 

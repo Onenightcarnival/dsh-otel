@@ -1,0 +1,89 @@
+# Tag-triggered release: build the offline .tgz from the tagged source, run the
+# test suite, attach the package (plus checksums and a build-provenance
+# attestation) to a GitHub Release, then keep the README's install command
+# pointing at the version just released.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::tag v$TAG_VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build bundles
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pack offline tarball
+        run: |
+          npm pack
+          sha256sum dsh-otel-*.tgz | tee SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dsh-otel-*.tgz
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dsh-otel-*.tgz
+            SHA256SUMS
+          generate_release_notes: true
+
+  sync-readme:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Point README install command at the released version
+        run: node scripts/sync-readme.mjs "${GITHUB_REF_NAME#v}"
+
+      - name: Commit README if it changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README already references $GITHUB_REF_NAME"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: point install command at $GITHUB_REF_NAME [skip ci]"
+          git push origin HEAD:${{ github.event.repository.default_branch }}

@@ -56,7 +56,9 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node test/unit.mjs && node test/export.e2e.mjs",
-    "pack:tgz": "npm run build && npm pack"
+    "pack:tgz": "npm run build && npm pack",
+    "sync-readme": "node scripts/sync-readme.mjs",
+    "version": "npm run sync-readme && git add README.md"
   },
   "devDependencies": {
     "@loongsuite/dsh-plugin": "^0.1.2",
